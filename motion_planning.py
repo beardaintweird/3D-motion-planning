@@ -124,7 +124,6 @@ class MotionPlanning(Drone):
         self.flight_state = States.PLANNING
         print("Searching for a path ...")
 
-
         self.target_position[2] = self.TARGET_ALTITUDE
 
         lat0 = ''
@@ -138,11 +137,10 @@ class MotionPlanning(Drone):
         self.set_home_position(lon0, lat0, 0)
         print('latitude {0}, longitude {1}'.format(self._latitude, self._longitude))
         local_position = global_to_local(self.global_position, self.global_home)
-        # print('global home {0}, position {1}, local position {2}'.format(self.global_home, self.global_position,
-                                                                         # self.local_position))
         print(local_position)
         print(local_position)
         print(local_position)
+
         # Read in obstacle map
         data = np.loadtxt('colliders.csv', delimiter=',', dtype='Float64', skiprows=2)
 
@@ -151,8 +149,6 @@ class MotionPlanning(Drone):
         print("North offset = {0}, east offset = {1}".format(north_offset, east_offset))
 
         start = (int(local_position[0]), int(local_position[1]), self.TARGET_ALTITUDE)
-        # goal = (750,370) # -- random goal
-        # goal = (-310.2389,-439.2315,172) # -- random goal (need to append to to_keep)
 
         #create graph representation
         self.obstacles = extract_polygons(data, self.SAFETY_DISTANCE)
@@ -182,23 +178,15 @@ class MotionPlanning(Drone):
 
         g = create_graph(to_keep, 8, poly_tree, self.obstacles)
 
-
-
         # find the nodes closest to the start and goal positions
         node_tree = KDTree(to_keep)
         coords = [[start[0],start[1],0],[goal[0],goal[1],0]]
         ind = node_tree.query(coords, k=1, return_distance=False)
         start_approx, goal_approx = to_keep[ind[0][0]], to_keep[ind[1][0]]
 
-        # TODO: adapt to set goal as latitude / longitude position and convert
-
         # Run A* to find a path from start to goal
         print('Local Start and Goal: ', start, goal)
         print('Approximate Local Start and Goal: ', start_approx, goal_approx)
-
-        # grid_start = (start[0], start[1])
-        # grid_goal = (-north_offset + 10, -east_offset + 10)
-        # path, _ = a_star(grid, heuristic, grid_start, grid_goal)
 
         path, path_cost = a_star_graph(g, heuristic, start_approx, goal_approx)
         print(path)
@@ -212,9 +200,6 @@ class MotionPlanning(Drone):
             self.waypoints = waypoints
             # send waypoints to sim (this is just for visualization of waypoints)
             self.send_waypoints()
-        # visualize_points(grid,data,path,g,start_approx)
-
-
 
     def start(self):
         self.start_log("Logs", "NavLog.txt")
