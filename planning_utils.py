@@ -1,7 +1,9 @@
 from enum import Enum
 from queue import PriorityQueue
 import numpy as np
-
+import networkx as nx
+from sklearn.neighbors import KDTree
+from shapely.geometry import Polygon, Point, LineString
 
 def create_grid(data, drone_altitude, safety_distance):
     """
@@ -71,6 +73,7 @@ def valid_actions(grid, current_node):
     """
     valid_actions = list(Action)
     n, m = grid.shape[0] - 1, grid.shape[1] - 1
+    print(current_node)
     x, y = current_node
 
     # check if the node is off the grid or
@@ -98,16 +101,16 @@ def a_star(grid, h, start, goal):
 
     branch = {}
     found = False
-    
+
     while not queue.empty():
         item = queue.get()
         current_node = item[1]
         if current_node == start:
             current_cost = 0.0
-        else:              
+        else:
             current_cost = branch[current_node][0]
-            
-        if current_node == goal:        
+
+        if current_node == goal:
             print('Found a path.')
             found = True
             break
@@ -118,12 +121,12 @@ def a_star(grid, h, start, goal):
                 next_node = (current_node[0] + da[0], current_node[1] + da[1])
                 branch_cost = current_cost + action.cost
                 queue_cost = branch_cost + h(next_node, goal)
-                
-                if next_node not in visited:                
-                    visited.add(next_node)               
+
+                if next_node not in visited:
+                    visited.add(next_node)
                     branch[next_node] = (branch_cost, current_node, action)
                     queue.put((queue_cost, next_node))
-             
+
     if found:
         # retrace steps
         n = goal
@@ -136,11 +139,121 @@ def a_star(grid, h, start, goal):
     else:
         print('**********************')
         print('Failed to find a path!')
-        print('**********************') 
+        print('**********************')
     return path[::-1], path_cost
+def a_star_graph(graph, h, start, goal):
+    path = []
+    path_cost = 0
+    queue = PriorityQueue()
+    queue.put((0, start))
+    visited = set(start)
 
+    branch = {}
+    found = False
+    while not queue.empty():
+        item = queue.get()
+        current_node = item[1]
+        if current_node == start:
+            current_cost = 0.0
+        else:
+            current_cost = branch[current_node][0]
 
+        if current_node == goal:
+            print('Found a path.')
+            found = True
+            break
+        else:
+            for action in graph.edges(current_node):
+                next_node = action[1]
+                branch_cost = current_cost + h(current_node,next_node)
+                queue_cost = branch_cost + h(next_node, goal)
+
+                if next_node not in visited:
+                    visited.add(next_node)
+                    branch[next_node] = (branch_cost, current_node, action)
+                    queue.put((queue_cost, next_node))
+
+    if found:
+        # retrace steps
+        n = goal
+        path_cost = branch[n][0]
+        path.append(goal)
+        while branch[n][1] != start:
+            path.append(branch[n][1])
+            n = branch[n][1]
+        path.append(branch[n][1])
+    else:
+        print('**********************')
+        print('Failed to find a path!')
+        print('**********************')
+        path, path_cost = [], 0
+    return path[::-1], path_cost
 
 def heuristic(position, goal_position):
     return np.linalg.norm(np.array(position) - np.array(goal_position))
 
+def extract_polygons(data, buffer):
+    polygons = []
+    for i in range(data.shape[0]):
+        north, east, alt, d_north, d_east, d_alt = data[i, :]
+        # left, right = east - d_east - buffer, east + d_east + buffer
+        # bottom, top = north - d_north - buffer, north + d_north + buffer
+        # corners = [(left, bottom), (right, bottom), (right, top), (left, top)]
+        obstacle = [north - d_north - buffer, north + d_north + buffer, east - d_east - buffer, east + d_east + buffer]
+        corners = [(obstacle[0], obstacle[2]), (obstacle[0], obstacle[3]), (obstacle[1], obstacle[3]), (obstacle[1], obstacle[2])]
+        height = alt + d_alt + buffer
+        p = Polygon(corners)
+        polygons.append((p, height))
+    return polygons
+
+def create_samples(data, num):
+    xmin = np.min(data[:, 0] - data[:, 3]) * 0.75
+    xmax = np.max(data[:, 0] + data[:, 3]) * 0.75
+    ymin = np.min(data[:, 1] - data[:, 4]) * 0.75
+    ymax = np.max(data[:, 1] + data[:, 4]) * 0.75
+    zmax = np.max(data[:, 2] + data[:, 5])
+    print('xmax {0}, ymax {1}, zmax {2}'.format(xmax,ymax,zmax))
+    print('xmin {0}, ymin {1}, zmin {2}'.format(xmin,ymin,zmax))
+    xvals = np.random.uniform(xmin, xmax, num)
+    yvals = np.random.uniform(ymin, ymax, num)
+    zvals = np.random.uniform(zmax*0.1, zmax * 0.6, num)
+    return list(zip(xvals, yvals, zvals))
+
+def collides(polygons, point, poly_tree):
+    pTree = [point[0], point[1],point[0],point[1]]
+    ind = poly_tree.query([pTree], k=300, return_distance=False)
+    for i in ind[0]:
+        (p, height) = polygons[i]
+        if p.contains(Point(point)) and height > point[2]:
+            return True
+    return False
+
+def can_connect(p1,p2,poly_tree,polygons):
+    line = LineString([p1,p2])
+    pTree = [p1[0], p1[1], p1[0], p1[1]]
+    pTree2 = [p2[0], p2[1], p2[0], p2[1]]
+    idx = poly_tree.query([pTree, pTree2], k=300, return_distance=False)
+    for i in idx:
+        for j in i:
+            (p, height) = polygons[j]
+            if p.crosses(line) and height > min(p1[2],p2[2]):
+                return False
+    return True
+
+def create_graph(nodes, neighbors, poly_tree, polygons):
+    G = nx.Graph()
+    tree = KDTree(nodes)
+    stopped = 0
+    for point in nodes:
+        idx = tree.query([point], k=neighbors, return_distance=False)
+        for i in idx[0]:
+            point2 = nodes[i]
+            if point2 == point:
+                continue
+
+            if can_connect(point,point2,poly_tree,polygons):
+                G.add_edge(point,point2)
+            else:
+                stopped += 1
+    print('connections stopped:', stopped)
+    return G
