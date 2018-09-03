@@ -11,7 +11,6 @@ Plan path changes the state of the drone's state machine. It creates a 2D config
 
 ### Implement planning algorithm
 Each step is completed in the plan_path method.
-- note: There is no functionality for passing in latitude and longitude. To achieve a similar result the path planner chooses a random point in the graph to set as the goal.
 - note: I chose to proceed with a graph representation of the search space.
 
 ### Executing the flight
