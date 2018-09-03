@@ -2,6 +2,7 @@ import argparse
 import time
 import msgpack
 import csv
+import sys
 from enum import Enum, auto
 from sklearn.neighbors import KDTree
 
@@ -138,8 +139,6 @@ class MotionPlanning(Drone):
         print('latitude {0}, longitude {1}'.format(self._latitude, self._longitude))
         local_position = global_to_local(self.global_position, self.global_home)
         print(local_position)
-        print(local_position)
-        print(local_position)
 
         # Read in obstacle map
         data = np.loadtxt('colliders.csv', delimiter=',', dtype='Float64', skiprows=2)
@@ -173,8 +172,19 @@ class MotionPlanning(Drone):
 
         print('before collision check', len(samples), 'after collision check', len(to_keep))
         print('number of obstacles', len(self.obstacles))
-        idx = np.random.randint(0,len(to_keep)-1)
-        goal = to_keep[idx]
+
+        # for choosing a random point as the goal
+        # idx = np.random.randint(0,len(to_keep)-1)
+        # goal = to_keep[idx]
+
+        # for choosing the goal based on a random latitude and longitude
+        # goal_lon = np.random.randint(np.amin(data[:,0]), np.amax(data[:,0]))
+        # goal_lat = np.random.randint(np.amin(data[:,1]), np.amax(data[:,1]))
+        # goal = [goal_lon, goal_lat]
+
+        # for setting lat and lon based on terminal inputs
+        lon, lat = sys.argv[1], sys.argv[2]
+        goal = [lon, lat]
 
         g = create_graph(to_keep, 8, poly_tree, self.obstacles)
 
@@ -215,7 +225,9 @@ class MotionPlanning(Drone):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description='accept lat and lon, fly the damn drone')
+    parser.add_argument('lon', type=float, default=50, help='lon')
+    parser.add_argument('lat', type=float, default=50, help='lat')
     parser.add_argument('--port', type=int, default=5760, help='Port number')
     parser.add_argument('--host', type=str, default='127.0.0.1', help="host address, i.e. '127.0.0.1'")
     args = parser.parse_args()
